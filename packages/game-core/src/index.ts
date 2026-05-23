@@ -8,3 +8,4 @@ export {
   DEFAULT_HAND_TYPES_BY_ID,
 } from "./hands/defaults.js";
 export * from "./game.js";
+export * from "./bot.js";
