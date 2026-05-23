@@ -14,6 +14,8 @@ import { Client, Room } from "@colyseus/core";
 import { Schema, type } from "@colyseus/schema";
 
 const BOT_DELAY_MS = 600;
+const TRICK_VIEW_MS = 1300;
+const SUMMARY_MS = 4000;
 const SEATS: PlayerId[] = [0, 1, 2, 3];
 
 class KingRoomState extends Schema {
@@ -92,7 +94,7 @@ export class KingRoom extends Room<KingRoomState> {
           ? `${(this.seats[seat] as OccupiedSeat).displayName} (bot)`
           : "Bot",
       };
-      this.scheduleBotIfNeeded();
+      this.scheduleAutoStep();
     } else {
       this.seats[seat] = null;
       this.broadcastLobby();
@@ -126,7 +128,7 @@ export class KingRoom extends Room<KingRoomState> {
     this.state.status = "playing";
     this.broadcast("game-started", {});
     this.broadcastViews();
-    this.scheduleBotIfNeeded();
+    this.scheduleAutoStep();
   }
 
   private handleAction(client: Client, action: GameAction | undefined): void {
@@ -156,44 +158,50 @@ export class KingRoom extends Room<KingRoomState> {
     if (this.game.phase.kind === "game-over") {
       this.state.status = "finished";
     }
-    this.scheduleBotIfNeeded();
+    this.scheduleAutoStep();
   }
 
-  private scheduleBotIfNeeded(): void {
+  private scheduleAutoStep(): void {
     if (this.botTimer) clearTimeout(this.botTimer);
     this.botTimer = null;
     if (!this.game) return;
-    const action = this.nextBotAction();
-    if (!action) return;
-    this.botTimer = setTimeout(() => this.runBotStep(), BOT_DELAY_MS);
+    const phase = this.game.phase;
+    let delay: number;
+    if (phase.kind === "trick-complete") {
+      delay = TRICK_VIEW_MS;
+    } else if (phase.kind === "hand-summary") {
+      delay = SUMMARY_MS;
+    } else if (this.nextBotAction()) {
+      delay = BOT_DELAY_MS;
+    } else {
+      return; // waiting on a human
+    }
+    this.botTimer = setTimeout(() => this.runAutoStep(), delay);
   }
 
-  private runBotStep(): void {
+  private runAutoStep(): void {
     this.botTimer = null;
     if (!this.game) return;
-    const action = this.nextBotAction();
+    const phase = this.game.phase;
+    const action: GameAction | null =
+      phase.kind === "trick-complete"
+        ? { kind: "collect-trick" }
+        : phase.kind === "hand-summary"
+          ? { kind: "advance-after-hand" }
+          : this.nextBotAction();
     if (!action) return;
     try {
       this.game = applyAction(this.game, action);
     } catch (e) {
-      console.error("Bot action failed", e);
+      console.error("Auto action failed", e);
       return;
     }
     this.broadcastViews();
     if (this.game.phase.kind === "game-over") {
       this.state.status = "finished";
-    }
-    if (this.game.phase.kind === "hand-summary") {
-      // Auto-advance after a short pause so humans can read scores.
-      this.botTimer = setTimeout(() => {
-        if (!this.game) return;
-        this.game = applyAction(this.game, { kind: "advance-after-hand" });
-        this.broadcastViews();
-        this.scheduleBotIfNeeded();
-      }, 2500);
       return;
     }
-    this.scheduleBotIfNeeded();
+    this.scheduleAutoStep();
   }
 
   private nextBotAction(): GameAction | null {
@@ -270,6 +278,8 @@ function isActionForSeat(
         game.phase.turn === seat &&
         action.player === seat
       );
+    case "collect-trick":
+      return game.phase.kind === "trick-complete";
     case "advance-after-hand":
       return game.phase.kind === "hand-summary";
   }

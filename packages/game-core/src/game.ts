@@ -47,6 +47,13 @@ export type GamePhase =
       readonly resolvedTricks: readonly ResolvedTrick[];
     }
   | {
+      readonly kind: "trick-complete";
+      readonly handTypeId: string;
+      readonly trump?: Suit;
+      readonly lastTrick: ResolvedTrick;
+      readonly resolvedTricks: readonly ResolvedTrick[];
+    }
+  | {
       readonly kind: "hand-summary";
       readonly handTypeId: string;
       readonly scores: Scores;
@@ -80,6 +87,7 @@ export type GameAction =
   | { readonly kind: "pick-hand"; readonly handTypeId: string }
   | { readonly kind: "pick-trump"; readonly suit: Suit }
   | { readonly kind: "play-card"; readonly player: PlayerId; readonly card: Card }
+  | { readonly kind: "collect-trick" }
   | { readonly kind: "advance-after-hand" };
 
 export class GameError extends Error {}
@@ -136,6 +144,8 @@ export function applyAction(state: GameState, action: GameAction): GameState {
       return handlePickTrump(state, action.suit);
     case "play-card":
       return handlePlayCard(state, action.player, action.card);
+    case "collect-trick":
+      return collectTrick(state);
     case "advance-after-hand":
       return advanceAfterHand(state);
   }
@@ -168,21 +178,16 @@ function enterPlayPhase(
   handTypeId: string,
   trump: Suit | undefined,
 ): GameState {
-  const phase: GamePhase = trump !== undefined ? {
-    kind: "play",
-    handTypeId,
-    trump,
-    turn: state.chooser,
-    currentTrick: { leader: state.chooser, plays: [] },
-    resolvedTricks: [],
-  } : {
-    kind: "play",
-    handTypeId,
-    turn: state.chooser,
-    currentTrick: { leader: state.chooser, plays: [] },
-    resolvedTricks: [],
+  return {
+    ...state,
+    phase: playPhase(
+      handTypeId,
+      trump,
+      state.chooser,
+      { leader: state.chooser, plays: [] },
+      [],
+    ),
   };
-  return { ...state, phase };
 }
 
 function handlePlayCard(
@@ -219,67 +224,88 @@ function handlePlayCard(
   };
 
   if (updatedTrick.plays.length < NUM_PLAYERS) {
-    const next: GamePhase = state.phase.trump !== undefined ? {
-      kind: "play",
-      handTypeId: state.phase.handTypeId,
-      trump: state.phase.trump,
-      turn: nextPlayer(player),
-      currentTrick: updatedTrick,
-      resolvedTricks: state.phase.resolvedTricks,
-    } : {
-      kind: "play",
-      handTypeId: state.phase.handTypeId,
-      turn: nextPlayer(player),
-      currentTrick: updatedTrick,
-      resolvedTricks: state.phase.resolvedTricks,
-    };
     return {
       ...state,
       playerCards: newPlayerCards,
-      phase: next,
+      phase: playPhase(
+        state.phase.handTypeId,
+        state.phase.trump,
+        nextPlayer(player),
+        updatedTrick,
+        state.phase.resolvedTricks,
+      ),
     };
   }
 
   const resolved = resolveTrick(updatedTrick, state.phase.trump);
   const allResolved = [...state.phase.resolvedTricks, resolved];
-
-  if (allResolved.length < CARDS_PER_PLAYER) {
-    const next: GamePhase = state.phase.trump !== undefined ? {
-      kind: "play",
-      handTypeId: state.phase.handTypeId,
-      trump: state.phase.trump,
-      turn: resolved.winner,
-      currentTrick: { leader: resolved.winner, plays: [] },
-      resolvedTricks: allResolved,
-    } : {
-      kind: "play",
-      handTypeId: state.phase.handTypeId,
-      turn: resolved.winner,
-      currentTrick: { leader: resolved.winner, plays: [] },
-      resolvedTricks: allResolved,
-    };
-    return {
-      ...state,
-      playerCards: newPlayerCards,
-      phase: next,
-    };
-  }
-
-  const handType = lookupHandType(state, state.phase.handTypeId);
-  const scores = handType.scoreHand({
-    resolvedTricks: allResolved,
-    chooser: state.chooser,
-    ...(state.phase.trump !== undefined ? { trump: state.phase.trump } : {}),
-  });
   return {
     ...state,
     playerCards: newPlayerCards,
+    phase: trickCompletePhase(
+      state.phase.handTypeId,
+      state.phase.trump,
+      resolved,
+      allResolved,
+    ),
+  };
+}
+
+function collectTrick(state: GameState): GameState {
+  const phase = state.phase;
+  if (phase.kind !== "trick-complete") {
+    throw new GameError(`Cannot collect trick in phase ${phase.kind}`);
+  }
+  const allResolved = phase.resolvedTricks;
+  if (allResolved.length < CARDS_PER_PLAYER) {
+    return {
+      ...state,
+      phase: playPhase(
+        phase.handTypeId,
+        phase.trump,
+        phase.lastTrick.winner,
+        { leader: phase.lastTrick.winner, plays: [] },
+        allResolved,
+      ),
+    };
+  }
+  const handType = lookupHandType(state, phase.handTypeId);
+  const scores = handType.scoreHand({
+    resolvedTricks: allResolved,
+    chooser: state.chooser,
+    ...(phase.trump !== undefined ? { trump: phase.trump } : {}),
+  });
+  return {
+    ...state,
     phase: {
       kind: "hand-summary",
-      handTypeId: state.phase.handTypeId,
+      handTypeId: phase.handTypeId,
       scores,
     },
   };
+}
+
+function playPhase(
+  handTypeId: string,
+  trump: Suit | undefined,
+  turn: PlayerId,
+  currentTrick: Trick,
+  resolvedTricks: readonly ResolvedTrick[],
+): GamePhase {
+  return trump !== undefined
+    ? { kind: "play", handTypeId, trump, turn, currentTrick, resolvedTricks }
+    : { kind: "play", handTypeId, turn, currentTrick, resolvedTricks };
+}
+
+function trickCompletePhase(
+  handTypeId: string,
+  trump: Suit | undefined,
+  lastTrick: ResolvedTrick,
+  resolvedTricks: readonly ResolvedTrick[],
+): GamePhase {
+  return trump !== undefined
+    ? { kind: "trick-complete", handTypeId, trump, lastTrick, resolvedTricks }
+    : { kind: "trick-complete", handTypeId, lastTrick, resolvedTricks };
 }
 
 function advanceAfterHand(state: GameState): GameState {

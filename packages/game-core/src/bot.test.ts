@@ -29,6 +29,9 @@ function autoplayFullGame(seed: string): GameState {
         g = applyAction(g, { kind: "play-card", player, card });
         break;
       }
+      case "trick-complete":
+        g = applyAction(g, { kind: "collect-trick" });
+        break;
       case "hand-summary":
         g = applyAction(g, { kind: "advance-after-hand" });
         break;

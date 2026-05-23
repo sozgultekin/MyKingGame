@@ -16,6 +16,7 @@ export interface LocalGameStore {
   pickHand: (handTypeId: string) => void;
   pickTrump: (suit: Suit) => void;
   playCard: (player: PlayerId, card: Card) => void;
+  collectTrick: () => void;
   advanceAfterHand: () => void;
   reset: () => void;
 }
@@ -39,6 +40,7 @@ export const useLocalGame = create<LocalGameStore>((set) => ({
     set((state) => dispatch(state, { kind: "pick-trump", suit })),
   playCard: (player, card) =>
     set((state) => dispatch(state, { kind: "play-card", player, card })),
+  collectTrick: () => set((state) => dispatch(state, { kind: "collect-trick" })),
   advanceAfterHand: () =>
     set((state) => dispatch(state, { kind: "advance-after-hand" })),
   reset: () => set({ game: null }),

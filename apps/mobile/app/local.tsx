@@ -4,7 +4,7 @@ import {
   legalPlays,
   sameCard,
 } from "@mykinggame/game-core";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -16,12 +16,19 @@ import { PlayingCard } from "../src/ui/Card";
 import { HandPickerModal } from "../src/ui/HandPickerModal";
 import { HandSummaryModal } from "../src/ui/HandSummaryModal";
 import { PLAYER_NAMES, PlayerSeat } from "../src/ui/PlayerSeat";
+import { PrivacyCurtain } from "../src/ui/PrivacyCurtain";
 import { TrickArea } from "../src/ui/TrickArea";
 import { TrumpPickerModal } from "../src/ui/TrumpPickerModal";
 import { useLocalGame } from "../src/store/localGameStore";
 
-const SUIT_NAME: Record<string, string> = { C: "♣ Sinek", D: "♦ Karo", H: "♥ Kupa", S: "♠ Maça" };
+const SUIT_NAME: Record<string, string> = {
+  C: "♣ Sinek",
+  D: "♦ Karo",
+  H: "♥ Kupa",
+  S: "♠ Maça",
+};
 const ALL_PLAYERS: PlayerId[] = [0, 1, 2, 3];
+const TRICK_VIEW_MS = 1300;
 
 export default function LocalGameScreen() {
   const game = useLocalGame((s) => s.game);
@@ -29,30 +36,66 @@ export default function LocalGameScreen() {
   const pickHand = useLocalGame((s) => s.pickHand);
   const pickTrump = useLocalGame((s) => s.pickTrump);
   const playCard = useLocalGame((s) => s.playCard);
+  const collectTrick = useLocalGame((s) => s.collectTrick);
   const advanceAfterHand = useLocalGame((s) => s.advanceAfterHand);
+
+  const [privacyOn, setPrivacyOn] = useState(true);
+  const [revealedFor, setRevealedFor] = useState<PlayerId | null>(null);
 
   useEffect(() => {
     if (!game) startNewGame();
   }, [game, startNewGame]);
 
+  // Auto-collect the completed trick after a short beat so it's visible.
+  useEffect(() => {
+    if (game?.phase.kind !== "trick-complete") return;
+    const t = setTimeout(collectTrick, TRICK_VIEW_MS);
+    return () => clearTimeout(t);
+  }, [game?.phase.kind, collectTrick]);
+
   if (!game) return null;
 
   const phase = game.phase;
   const handType = useMemo(() => {
-    if (phase.kind === "play" || phase.kind === "hand-summary" || phase.kind === "pick-trump") {
+    if (
+      phase.kind === "play" ||
+      phase.kind === "trick-complete" ||
+      phase.kind === "hand-summary" ||
+      phase.kind === "pick-trump"
+    ) {
       return game.options.handTypes.find((h) => h.id === phase.handTypeId);
     }
     return undefined;
   }, [phase, game.options.handTypes]);
 
-  const activePlayer: PlayerId | null = phase.kind === "play" ? phase.turn : null;
-  const hand: readonly Card[] = activePlayer !== null ? game.playerCards[activePlayer] : [];
-  const legal = useMemo(() => {
-    if (phase.kind !== "play" || activePlayer === null) return [];
-    return legalPlays(hand, phase.currentTrick);
-  }, [phase, activePlayer, hand]);
+  const activeActor: PlayerId | null =
+    phase.kind === "play"
+      ? phase.turn
+      : phase.kind === "pick-hand" || phase.kind === "pick-trump"
+        ? game.chooser
+        : null;
 
+  const hand: readonly Card[] = activeActor !== null ? game.playerCards[activeActor] : [];
+  const legal = useMemo(() => {
+    if (phase.kind !== "play" || activeActor === null) return [];
+    return legalPlays(hand, phase.currentTrick);
+  }, [phase, activeActor, hand]);
   const isLegalCard = (c: Card) => legal.some((l) => sameCard(l, c));
+
+  const needsReveal =
+    privacyOn && activeActor !== null && revealedFor !== activeActor;
+  const trump =
+    phase.kind === "play"
+      ? phase.trump
+      : phase.kind === "trick-complete"
+        ? phase.trump
+        : undefined;
+
+  const onPlay = (card: Card) => {
+    if (activeActor === null) return;
+    playCard(activeActor, card);
+    setRevealedFor(null);
+  };
 
   return (
     <View style={styles.root}>
@@ -60,9 +103,16 @@ export default function LocalGameScreen() {
         <Text style={styles.handLabel}>
           {handType ? handType.name : "El seçiliyor..."}
         </Text>
-        <Text style={styles.handsCount}>
-          {game.handsPlayed + 1} / {game.options.totalHands}
-        </Text>
+        <View style={styles.topRight}>
+          <Pressable onPress={() => setPrivacyOn((v) => !v)} style={styles.privacyToggle}>
+            <Text style={styles.privacyText}>
+              {privacyOn ? "Gizli" : "Açık"} el
+            </Text>
+          </Pressable>
+          <Text style={styles.handsCount}>
+            {game.handsPlayed + 1} / {game.options.totalHands}
+          </Text>
+        </View>
       </View>
 
       <View style={styles.seatsRow}>
@@ -71,24 +121,31 @@ export default function LocalGameScreen() {
             key={p}
             player={p}
             isChooser={game.chooser === p}
-            isTurn={activePlayer === p}
+            isTurn={activeActor === p && phase.kind === "play"}
             total={game.totals[p]}
           />
         ))}
       </View>
 
-      {phase.kind === "play" && (
-        <TrickArea
-          trick={phase.currentTrick}
-          trump={phase.trump ? SUIT_NAME[phase.trump] : undefined}
-        />
-      )}
+      <View style={styles.middle}>
+        {phase.kind === "play" && (
+          <TrickArea
+            plays={phase.currentTrick.plays}
+            trump={trump ? SUIT_NAME[trump] : undefined}
+          />
+        )}
+        {phase.kind === "trick-complete" && (
+          <TrickArea
+            plays={phase.lastTrick.plays}
+            trump={trump ? SUIT_NAME[trump] : undefined}
+            winner={phase.lastTrick.winner}
+          />
+        )}
+      </View>
 
-      {activePlayer !== null && (
+      {activeActor !== null && phase.kind === "play" && (
         <View style={styles.handContainer}>
-          <Text style={styles.handLabel}>
-            {PLAYER_NAMES[activePlayer]} oynayacak
-          </Text>
+          <Text style={styles.handLabel}>{PLAYER_NAMES[activeActor]} oynayacak</Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -102,7 +159,7 @@ export default function LocalGameScreen() {
                     card={card}
                     size="md"
                     disabled={!legalNow}
-                    onPress={legalNow ? () => playCard(activePlayer, card) : undefined}
+                    onPress={legalNow ? () => onPlay(card) : undefined}
                   />
                 </View>
               );
@@ -112,17 +169,23 @@ export default function LocalGameScreen() {
       )}
 
       <HandPickerModal
-        visible={phase.kind === "pick-hand"}
+        visible={phase.kind === "pick-hand" && !needsReveal}
         options={game.options.handTypes}
         remainingIds={game.remainingHandTypeIds}
         chooserName={PLAYER_NAMES[game.chooser]}
-        onPick={pickHand}
+        onPick={(id) => {
+          pickHand(id);
+          setRevealedFor(null);
+        }}
       />
 
       <TrumpPickerModal
-        visible={phase.kind === "pick-trump"}
+        visible={phase.kind === "pick-trump" && !needsReveal}
         chooserName={PLAYER_NAMES[game.chooser]}
-        onPick={pickTrump}
+        onPick={(suit) => {
+          pickTrump(suit);
+          setRevealedFor(null);
+        }}
       />
 
       {phase.kind === "hand-summary" && (
@@ -148,6 +211,12 @@ export default function LocalGameScreen() {
           onNewGame={() => startNewGame()}
         />
       )}
+
+      <PrivacyCurtain
+        visible={needsReveal}
+        playerName={activeActor !== null ? PLAYER_NAMES[activeActor] : ""}
+        onReveal={() => activeActor !== null && setRevealedFor(activeActor)}
+      />
 
       <Pressable
         style={({ pressed }) => [styles.resetBtn, pressed && { opacity: 0.7 }]}
@@ -183,15 +252,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  topRight: { flexDirection: "row", alignItems: "center", gap: 10 },
   handLabel: { color: "#f5e9c8", fontSize: 16, fontWeight: "700" },
   handsCount: { color: "#d4af37", fontSize: 14, fontWeight: "600" },
+  privacyToggle: {
+    borderColor: "#1d5c46",
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  privacyText: { color: "#a8c5b6", fontSize: 11 },
   seatsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
     gap: 6,
   },
-  handContainer: { marginTop: "auto", gap: 8 },
+  middle: { flex: 1, alignItems: "center", justifyContent: "center" },
+  handContainer: { gap: 8 },
   handScroll: { gap: 6, paddingVertical: 8 },
   cardWrap: { width: 56 },
   resetBtn: {

@@ -1,34 +1,42 @@
-import type { PlayerId, Trick } from "@mykinggame/game-core";
+import type { PlayerId, TrickPlay } from "@mykinggame/game-core";
 import { StyleSheet, Text, View } from "react-native";
+import Animated, { FadeIn, ZoomIn } from "react-native-reanimated";
 import { PlayingCard } from "./Card";
 
 const SEAT_POSITION: Record<PlayerId, { top: number; left: number }> = {
-  0: { top: 110, left: 60 },
-  1: { top: 60, left: 10 },
-  2: { top: 10, left: 60 },
-  3: { top: 60, left: 110 },
+  0: { top: 120, left: 72 },
+  1: { top: 70, left: 14 },
+  2: { top: 14, left: 72 },
+  3: { top: 70, left: 130 },
 };
 
 export interface TrickAreaProps {
-  trick: Trick;
+  plays: readonly TrickPlay[];
   trump?: string;
+  winner?: PlayerId;
 }
 
-export function TrickArea({ trick, trump }: TrickAreaProps) {
+export function TrickArea({ plays, trump, winner }: TrickAreaProps) {
   return (
     <View style={styles.area}>
-      {trick.plays.map(({ player, card }) => {
+      {plays.map(({ player, card }) => {
         const pos = SEAT_POSITION[player];
+        const isWinner = winner === player;
         return (
-          <View key={`${card.rank}${card.suit}`} style={[styles.slot, pos]}>
+          <Animated.View
+            key={`${card.rank}${card.suit}`}
+            entering={ZoomIn.duration(180)}
+            style={[styles.slot, pos, isWinner && styles.winnerSlot]}
+          >
             <PlayingCard card={card} size="sm" />
-          </View>
+            {isWinner && <View style={styles.winnerGlow} />}
+          </Animated.View>
         );
       })}
       {trump && (
-        <View style={styles.trumpBadge}>
+        <Animated.View entering={FadeIn} style={styles.trumpBadge}>
           <Text style={styles.trumpText}>Koz: {trump}</Text>
-        </View>
+        </Animated.View>
       )}
     </View>
   );
@@ -36,16 +44,33 @@ export function TrickArea({ trick, trump }: TrickAreaProps) {
 
 const styles = StyleSheet.create({
   area: {
-    width: 200,
-    height: 200,
+    width: 220,
+    height: 220,
     backgroundColor: "#0a3023",
-    borderRadius: 100,
+    borderRadius: 110,
     borderColor: "#1d5c46",
     borderWidth: 1,
     alignSelf: "center",
     position: "relative",
   },
   slot: { position: "absolute" },
+  winnerSlot: {
+    transform: [{ scale: 1.12 }],
+    shadowColor: "#d4af37",
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  winnerGlow: {
+    position: "absolute",
+    top: -3,
+    left: -3,
+    right: -3,
+    bottom: -3,
+    borderRadius: 8,
+    borderColor: "#d4af37",
+    borderWidth: 2,
+  },
   trumpBadge: {
     position: "absolute",
     bottom: -28,

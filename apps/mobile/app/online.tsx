@@ -207,7 +207,12 @@ function OnlineGameView() {
   const handType = useMemo(() => {
     if (!public_) return undefined;
     const ph = public_.phase;
-    if (ph.kind === "play" || ph.kind === "pick-trump" || ph.kind === "hand-summary") {
+    if (
+      ph.kind === "play" ||
+      ph.kind === "trick-complete" ||
+      ph.kind === "pick-trump" ||
+      ph.kind === "hand-summary"
+    ) {
       return DEFAULT_HAND_TYPES.find((h) => h.id === ph.handTypeId);
     }
     return undefined;
@@ -253,8 +258,15 @@ function OnlineGameView() {
       <View style={styles.middleRow}>
         {public_.phase.kind === "play" && (
           <TrickArea
-            trick={public_.phase.currentTrick}
+            plays={public_.phase.currentTrick.plays}
             trump={public_.phase.trump ? SUIT_NAME[public_.phase.trump] : undefined}
+          />
+        )}
+        {public_.phase.kind === "trick-complete" && (
+          <TrickArea
+            plays={public_.phase.lastTrick.plays}
+            trump={public_.phase.trump ? SUIT_NAME[public_.phase.trump] : undefined}
+            winner={public_.phase.lastTrick.winner}
           />
         )}
       </View>

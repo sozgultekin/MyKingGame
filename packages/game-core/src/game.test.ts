@@ -20,7 +20,11 @@ function makeGame(overrides: Partial<{ seed: string; totalHands: number }> = {})
 }
 
 function autoplayHand(state: GameState): GameState {
-  while (state.phase.kind === "play") {
+  while (state.phase.kind === "play" || state.phase.kind === "trick-complete") {
+    if (state.phase.kind === "trick-complete") {
+      state = applyAction(state, { kind: "collect-trick" });
+      continue;
+    }
     const player = state.phase.turn as PlayerId;
     const hand = state.playerCards[player];
     const legal = legalPlays(hand, state.phase.currentTrick);
@@ -49,6 +53,23 @@ describe("game state machine", () => {
   it("moves to pick-trump when hand requires it", () => {
     const g = applyAction(makeGame(), { kind: "pick-hand", handTypeId: "kozlu" });
     expect(g.phase.kind).toBe("pick-trump");
+  });
+
+  it("pauses at trick-complete after the 4th card", () => {
+    let g = makeGame({ totalHands: 1 });
+    g = applyAction(g, { kind: "pick-hand", handTypeId: "kiz" });
+    if (g.phase.kind !== "play") throw new Error("expected play phase");
+    for (let i = 0; i < 4; i++) {
+      if (g.phase.kind !== "play") throw new Error("expected play phase");
+      const player = g.phase.turn;
+      const legal = legalPlays(g.playerCards[player], g.phase.currentTrick);
+      g = applyAction(g, { kind: "play-card", player, card: legal[0]! });
+    }
+    expect(g.phase.kind).toBe("trick-complete");
+    if (g.phase.kind !== "trick-complete") throw new Error("unreachable");
+    expect(g.phase.lastTrick.plays).toHaveLength(4);
+    g = applyAction(g, { kind: "collect-trick" });
+    expect(g.phase.kind).toBe("play");
   });
 
   it("plays a full hand and produces scores", () => {

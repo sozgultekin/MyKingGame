@@ -22,7 +22,7 @@ export interface SingleGameStore {
   pickTrump: (suit: Suit) => void;
   playCard: (card: Card) => void;
   advanceAfterHand: () => void;
-  stepBot: () => void;
+  stepAuto: () => void;
   reset: () => void;
 }
 
@@ -55,17 +55,17 @@ export const useSingleGame = create<SingleGameStore>((set, get) => ({
     set((s) => dispatch(s, { kind: "play-card", player: HUMAN, card }));
   },
   advanceAfterHand: () => set((s) => dispatch(s, { kind: "advance-after-hand" })),
-  stepBot: () => {
+  stepAuto: () => {
     const { game } = get();
     if (!game) return;
-    const action = nextBotAction(game);
+    const action = nextAutoAction(game);
     if (!action) return;
     set((s) => dispatch(s, action));
   },
   reset: () => set({ game: null }),
 }));
 
-export function nextBotAction(game: GameState): GameAction | null {
+export function nextAutoAction(game: GameState): GameAction | null {
   switch (game.phase.kind) {
     case "pick-hand":
       if (game.chooser === HUMAN) return null;
@@ -80,6 +80,8 @@ export function nextBotAction(game: GameState): GameAction | null {
         player: game.phase.turn,
         card: bot.playCard(game, game.phase.turn),
       };
+    case "trick-complete":
+      return { kind: "collect-trick" };
     default:
       return null;
   }

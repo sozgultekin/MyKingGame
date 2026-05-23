@@ -18,7 +18,7 @@ import { HandSummaryModal } from "../src/ui/HandSummaryModal";
 import { PLAYER_NAMES, PlayerSeat } from "../src/ui/PlayerSeat";
 import { TrickArea } from "../src/ui/TrickArea";
 import { TrumpPickerModal } from "../src/ui/TrumpPickerModal";
-import { HUMAN, nextBotAction, useSingleGame } from "../src/store/singleGameStore";
+import { HUMAN, nextAutoAction, useSingleGame } from "../src/store/singleGameStore";
 
 const SUIT_NAME: Record<string, string> = {
   C: "♣ Sinek",
@@ -28,6 +28,7 @@ const SUIT_NAME: Record<string, string> = {
 };
 const ALL_PLAYERS: PlayerId[] = [0, 1, 2, 3];
 const BOT_DELAY_MS = 700;
+const TRICK_VIEW_MS = 1300;
 
 export default function SinglePlayerScreen() {
   const game = useSingleGame((s) => s.game);
@@ -36,7 +37,7 @@ export default function SinglePlayerScreen() {
   const pickTrump = useSingleGame((s) => s.pickTrump);
   const playCard = useSingleGame((s) => s.playCard);
   const advanceAfterHand = useSingleGame((s) => s.advanceAfterHand);
-  const stepBot = useSingleGame((s) => s.stepBot);
+  const stepAuto = useSingleGame((s) => s.stepAuto);
 
   useEffect(() => {
     if (!game) startNewGame();
@@ -44,16 +45,22 @@ export default function SinglePlayerScreen() {
 
   useEffect(() => {
     if (!game) return;
-    if (!nextBotAction(game)) return;
-    const t = setTimeout(stepBot, BOT_DELAY_MS);
+    if (!nextAutoAction(game)) return;
+    const delay = game.phase.kind === "trick-complete" ? TRICK_VIEW_MS : BOT_DELAY_MS;
+    const t = setTimeout(stepAuto, delay);
     return () => clearTimeout(t);
-  }, [game, stepBot]);
+  }, [game, stepAuto]);
 
   if (!game) return null;
 
   const phase = game.phase;
   const handType = useMemo(() => {
-    if (phase.kind === "play" || phase.kind === "hand-summary" || phase.kind === "pick-trump") {
+    if (
+      phase.kind === "play" ||
+      phase.kind === "trick-complete" ||
+      phase.kind === "hand-summary" ||
+      phase.kind === "pick-trump"
+    ) {
       return game.options.handTypes.find((h) => h.id === phase.handTypeId);
     }
     return undefined;
@@ -102,8 +109,15 @@ export default function SinglePlayerScreen() {
         <OpponentCards count={game.playerCards[1].length} label={PLAYER_NAMES[1]} vertical />
         {phase.kind === "play" && (
           <TrickArea
-            trick={phase.currentTrick}
+            plays={phase.currentTrick.plays}
             trump={phase.trump ? SUIT_NAME[phase.trump] : undefined}
+          />
+        )}
+        {phase.kind === "trick-complete" && (
+          <TrickArea
+            plays={phase.lastTrick.plays}
+            trump={phase.trump ? SUIT_NAME[phase.trump] : undefined}
+            winner={phase.lastTrick.winner}
           />
         )}
         <OpponentCards count={game.playerCards[3].length} label={PLAYER_NAMES[3]} vertical />
