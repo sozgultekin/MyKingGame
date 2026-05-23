@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "King",
+    "slug": "mykinggame",
+    "scheme": "mykinggame",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mykinggame.app"
+    },
+    "android": {
+      "package": "com.mykinggame.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b3d2e"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0b3d2e",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
